@@ -49,7 +49,7 @@ disable_mlock = true
  - </dependency>
  - </dependencies>
  
- **bootstrap.yml**
+- **bootstrap.yml**
  - spring:
    - application:
     - name: crypto
@@ -71,5 +71,93 @@ disable_mlock = true
     
 ** password argument Dvault_token On JVM startup**
 - -Dvault_token=XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX
+
+
+**dependencies**
+- spring-boot-starter-mail
+
+**application.yml**
+- main:
+  - host: smtp.gmail.com
+  - port: 587
+  - username: sdfsf@gmail.com
+  - password: kdjfslf
+  - properties:
+   - mail:
+    - smtp:
+     - auth: true
+     - starttls:
+      - enable: true
+  - protocol: smtp
+  - test-connection: false
+  
+  Listen Event:
+   - AutenticationFailureExpiredEvent
+   - AuthenticationFailureServiceExceptionEvent
+   - AuthenticationFailureLockedEvent
+   - AuthenticationFailureCredentialsExpiredEvent
+   - AuthenticationFailureDisabledEvent
+   - AuthenticationFailureBadCredentialsEvent
+   - AuthenticationFailureProviderNotFoundEvent
+   
+** Create a class extend ApplicationEvent**
+ - ApplicationEvent -> UserRegisterationEvent(CryptoUser user)
+ - EmailVerificationListener implements ApplicationListener<UserRegisterationEvent>
+ - onApplicationEvent(UserRegisterationEvent event){
+    String username = event.getUser().getUsername();
+    String verificationId  = verificationService.createVerification(username);
+    String email = event.getUser().getEmail();
+    SimpleMailMessage message = new SimpleMailMessage();
+    message.setSubject("Crypto Portfolio Account Verification");
+    message.setText("Account activation link: https://localhost:8443/verify/email?id="+verificationId);
+    message.setTo(email);
+    mailSender.send(message);
+ }
+ 
+ - Verification(id,username)
+ - UserDetailServiceNoSql implements UserDetailsService
+  - private final UserRepository userRepository
+  - UserDetails loadUserByUsername(String username) throws UsernameNotFoundException{
+    CryptoUser user = userRepository.findByUsername(username);
+    if(user == null){
+      throw new UsernameNotFoundException(username);
+    }
+    return User.withUsername(user.getUsername()).password(user.getPassword()).roles("User").disabled(!user.isVerified()).build();
+  }
+  class RegstrationController{
+  @GetMapping("/register")
+  public String register(Model model){
+    model.addAttribute("user", new UserDto());
+    return "register";
+  }
+  
+  @PostMapping("/register")
+  String register(@Valid @ModelAttribute("user") UserDto user, BindingResult result){
+    if(result.hasErrors()){
+      return "register";
+    }
+    CryptoUser cryptUser = new CryptoUser(user.getUsername(), user.getFirstName(), user.getEmail(), encoder.encode(user.getPassword()));
+    repository.save(cryptUser);
+    portfolioRepository.save(new Portfolio(user.getUsername(), new ArrayList<>()));
+    eventPublisher.publishEvent(new UserRegisterationEvent(cryptUser));
+    return "redirect:register?success";
+  }
+  }
+  
+  class VerificationController{
+    @GetMapping("/verify/email")
+    public String verifyEmail(@RequestParam String id){
+      String username = verificationService.getUsernameForId(id);
+      if(username !=null){
+        CryptoUser user = userRepository.findByUsername(username);
+        user.setVerified(true);
+        userRepository.save(user);
+      }
+      return "redirect:/login-verified";
+    }
+  }
+  
+  
+  
  
  
